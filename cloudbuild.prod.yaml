@@ -1,0 +1,46 @@
+steps:
+
+- id: "rodando-docker-compose"
+  name: 'gcr.io/$PROJECT_ID/docker-compose'
+  args: ['-f', 'docker-compose.cloudbuild.yaml', 'up', '-d']
+
+- id: "rodando-docker-ps"
+  name: 'gcr.io/cloud-builders/docker'
+  args: ['ps']
+
+- id: "executando-go"
+  name: 'gcr.io/cloud-builders/go'
+  args: ['run', 'greetings.go']
+  env: ['GOPATH=/app']
+
+- id: "executando-teste-unitario"
+  name: 'gcr.io/cloud-builders/go'
+  args: ['test', '-cover']
+  env: ['GOPATH=/app']
+
+- id: "Building Image From Dockerfile.prod"
+  name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/$PROJECT_ID/app-go:$SHORT_SHA', '-f', 'Dockerfile.prod', '.']
+
+- id: "Pushing Image"
+  name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'gcr.io/$PROJECT_ID/app-go:$SHORT_SHA']
+
+- id: "Adjusting Deployment File-Kubernetes"
+  name: 'gcr.io/cloud-builders/gcloud'
+  entrypoint: '/bin/sh'
+  args:
+    - '-c'
+    - |
+      sed 's#img-app-deployment#gcr.io/$PROJECT_ID/app-go:$SHORT_SHA#g' k8s/go/deployment.yaml > k8s/go/deployment-new.yaml;
+      cat k8s/go/deployment-new.yaml;
+
+- id: "Deploying Kubernetes"
+  name: 'gcr.io/cloud-builders/kubectl'
+  args:
+    - 'apply'
+    - '-f'
+    - 'k8s/go/deployment-new.yaml'
+  env:
+    - 'CLOUDSDK_COMPUTE_ZONE=us-central1-c'
+    - 'CLOUDSDK_CONTAINER_CLUSTER=cluster-docker-go'
